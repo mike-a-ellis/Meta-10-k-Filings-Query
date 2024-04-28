@@ -1,0 +1,12 @@
+chainlit
+cohere
+openai
+tiktoken
+python-dotenv
+langchain
+langchain-core
+langchain-community 
+langchain-openai
+qdrant-client
+tiktoken
+pymupdf
