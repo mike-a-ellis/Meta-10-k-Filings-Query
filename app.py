@@ -11,7 +11,10 @@ from langchain.schema.runnable import RunnablePassthrough
 from langchain.schema.output_parser import StrOutputParser
 from qdrant_client import QdrantClient
 from langchain_core.prompts import ChatPromptTemplate
+from langchain.retrievers.multi_query import MultiQueryRetriever
 
+openai_chat_model = ChatOpenAI(model="gpt-3.5-turbo")
+openai_chat_model_4 = ChatOpenAI(model="gpt-4-turbo")
 # Split documents into chunks
 def tiktoken_len(text):
     tokens = tiktoken.encoding_for_model("gpt-3.5-turbo").encode(
@@ -19,36 +22,34 @@ def tiktoken_len(text):
     )
     return len(tokens)
 
-# docs = PyMuPDFLoader("Meta10k.pdf").load()
+docs = PyMuPDFLoader("Meta10k.pdf").load()
 
-# text_splitter = RecursiveCharacterTextSplitter(
-#     chunk_size = 1000,
-#     chunk_overlap = 200,
-#     length_function = tiktoken_len,
-# )
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size = 1000,
+    chunk_overlap = 50,
+    length_function = tiktoken_len,
+)
 
-# split_chunks = text_splitter.split_documents(docs)
+split_chunks = text_splitter.split_documents(docs)
 
 embedding_model = OpenAIEmbeddings(model="text-embedding-3-small")
 
-# qdrant_vectorstore = Qdrant.from_documents(
-#     split_chunks, 
-#     embedding_model, 
-#     path="./data/embeddings",
-#     collection_name="Meta10k",
-# )
+qdrant_vectorstore = Qdrant.from_documents(
+    split_chunks, 
+    embedding_model, 
+    location=":memory:",
+    collection_name="Meta10k",
+)
 
-client = QdrantClient(path="./data/embeddings") 
-db = Qdrant(client=client, collection_name="Meta10k", embeddings=embedding_model,)
+#client = QdrantClient(path="./data/embeddings") 
+#db = Qdrant(client=client, collection_name="Meta10k", embeddings=embedding_model,)
 
-qdrant_retriever = db.as_retriever()
+#qdrant_retriever = db.as_retriever()
+qdrant_retriever = qdrant_vectorstore.as_retriever(search_type="mmr", search_kwargs={'k': 6, 'lambda_mult': 0.25})
 
 @cl.on_chat_start
 def chat_start():
     
-    openai_chat_model = ChatOpenAI(model="gpt-3.5-turbo")
-    openai_chat_model_4 = ChatOpenAI(model="gpt-4-turbo")
-
     RAG_PROMPT = """
     You are an expert financial analyst.  You will be provided CONTEXT excerpts from the META company 10K annual report.  Your job is to answer the QUERY as correctly as you can using the information provided by the CONTEXT and your skills as an expert financial analyst. IF the context provided does give you enough information to answer the question, respond "I do not know"
 
@@ -83,7 +84,9 @@ def chat_start():
         ("human", EVAL_USER_TEMPLATE)
     ])
 
-    chain = ({"context": itemgetter("question") | qdrant_retriever, "question": itemgetter("question")} | RunnablePassthrough.assign(context=itemgetter("context")) | {"response": rag_prompt | openai_chat_model, "context": itemgetter("context")})
+    retriever_from_llm = MultiQueryRetriever.from_llm(retriever=qdrant_retriever, llm=openai_chat_model)
+
+    chain = ({"context": itemgetter("question") | retriever_from_llm, "question": itemgetter("question")} | RunnablePassthrough.assign(context=itemgetter("context")) | {"response": rag_prompt | openai_chat_model, "context": itemgetter("context")})
     eval_chain = eval_prompt | openai_chat_model_4
 
     cl.user_session.set("chain", chain)
