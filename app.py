@@ -6,16 +6,14 @@ from langchain.document_loaders import PyMuPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_community.vectorstores import Qdrant
-from operator import itemgetter
 from langchain.schema.runnable import RunnablePassthrough
-from langchain.schema.output_parser import StrOutputParser
-from qdrant_client import QdrantClient
-from langchain_core.prompts import ChatPromptTemplate
+from operator import itemgetter
 from langchain.retrievers.multi_query import MultiQueryRetriever
 
 openai_chat_model = ChatOpenAI(model="gpt-3.5-turbo")
 openai_chat_model_4 = ChatOpenAI(model="gpt-4-turbo")
-# Split documents into chunks
+
+
 def tiktoken_len(text):
     tokens = tiktoken.encoding_for_model("gpt-3.5-turbo").encode(
         text,
@@ -41,17 +39,14 @@ qdrant_vectorstore = Qdrant.from_documents(
     collection_name="Meta10k",
 )
 
-#client = QdrantClient(path="./data/embeddings") 
-#db = Qdrant(client=client, collection_name="Meta10k", embeddings=embedding_model,)
-
-#qdrant_retriever = db.as_retriever()
+# THE SECRET SAUCE
 qdrant_retriever = qdrant_vectorstore.as_retriever(search_type="mmr", search_kwargs={'k': 6, 'lambda_mult': 0.25})
 
 @cl.on_chat_start
 def chat_start():
     
     RAG_PROMPT = """
-    You are an expert financial analyst.  You will be provided CONTEXT excerpts from the META company 10K annual report.  Your job is to answer the QUERY as correctly as you can using the information provided by the CONTEXT and your skills as an expert financial analyst. IF the context provided does give you enough information to answer the question, respond "I do not know"
+    You are an expert financial analyst.  You will be provided CONTEXT excerpts from the META company 10K annual report.  Your job is to answer the QUERY as correctly as you can using the information provided by the CONTEXT and your skills as an expert financial analyst.  For questions regarding money do not over think it and begin adding values unless you are specifically asked to.  Use the simplest most obvious choice. IF the context provided does give you enough information to answer the question, respond "I do not know"
 
     CONTEXT:
     {context}
